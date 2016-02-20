@@ -32,8 +32,7 @@ local removeComplete
 local autoTracked = {}
 
 local function trackQuest(questIndex, markAutoTracked)
-	local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
-
+	local _, _, _, _, _, _, _, questID, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
 	local isWatched = IsQuestWatched(questIndex)
 
 	if (not isWatched) or markAutoTracked then
@@ -100,7 +99,7 @@ local function debugPrintWatchedQuests()
 	debugPrintQuestsHelper(true)
 end
 
-local function smart_quest_watches()
+local function run_update()
 	local areaid = GetCurrentMapAreaID();
 	local numEntries, _ = GetNumQuestLogEntries()
 	for questIndex = 1, numEntries do
@@ -121,20 +120,11 @@ local function smart_quest_watches()
 	end
 end
 
-
-local function run_update()
-	smart_quest_watches()
-end
-
 local function TriggerHandler(self, event, questIndex)
 	if event == "QUEST_WATCH_UPDATE" then
-		if removeComplete then
-			local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
-			if isComplete then
-				untrackQuest(questIndex)
-			else
-				trackQuest(questIndex, true)
-			end
+		local _, _, _, _, _, isComplete, _, _, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
+		if (removeComplete and isComplete) then
+			untrackQuest(questIndex)
 		else
 			trackQuest(questIndex, true)
 		end
@@ -146,7 +136,6 @@ local function TriggerHandler(self, event, questIndex)
 end
 
 --Function we can call when a setting changes.
---In this case it just checks if "SomeToggleOption" is enabled. If it is it prints the value of "SomeRangeOption", otherwise it tells you that "SomeToggleOption" is disabled.
 function MyPlugin:Update()
 	autoRemove = E.db.ElvUI_SmartQuestTracker.AutoRemove
 	autoSort =  E.db.ElvUI_SmartQuestTracker.AutoSort
@@ -223,13 +212,13 @@ function MyPlugin:InsertOptions()
 					print = {
 						type = 'execute',
 						order = 1,
-						name = 'Print Quests to chat',
+						name = 'Print all quests to chat',
 						func = function() debugPrintQuests() end,
 					},
 					printWatched = {
 						type = 'execute',
 						order = 1,
-						name = 'Print watched Quests to chat',
+						name = 'Print tracked quests to chat',
 						func = function() debugPrintWatchedQuests() end,
 					},
 					untrack = {
