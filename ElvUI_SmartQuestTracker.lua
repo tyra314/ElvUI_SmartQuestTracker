@@ -25,38 +25,44 @@ P["ElvUI_SmartQuestTracker"] = {
 	["AutoSort"] = true,
 }
 
-local SQWframe = CreateFrame("Frame")
+local frame = CreateFrame("Frame")
 local autoRemove
 local autoSort
 local removeComplete
 local autoTracked = {}
 
-local function trackQuest(questIndex, markAutoTracked)
-	local _, _, _, _, _, _, _, questID, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
-	local isWatched = IsQuestWatched(questIndex)
+local function getQuestId(index)
+ 	local _, _, _, _, _, _, _, questID, _, _, _, _, _, _ = GetQuestLogTitle(index)
+
+	return questID
+end
+
+local function trackQuest(index, markAutoTracked)
+	local questID = getQuestId(index)
+	local isWatched = IsQuestWatched(index)
 
 	if (not isWatched) or markAutoTracked then
 		autoTracked[questID] = true
+		AddQuestWatch(index)
 	end
-	AddQuestWatch(questIndex)
 end
 
-local function untrackQuest(questIndex)
-	local _, _, _, _, _, _, _, questID, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
-	local questMapId, _ = GetQuestWorldMapAreaID(questID)
+local function untrackQuest(index)
+	local questID = getQuestId(index)
 
 	if autoTracked[questID] and autoRemove then
 		autoTracked[questID] = nil
-		RemoveQuestWatch(questIndex)
+		RemoveQuestWatch(index)
 	end
 end
 
 local function untrackAllQuests()
 	local numEntries, _ = GetNumQuestLogEntries()
-	for questIndex = 1, numEntries do
-		local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
+
+	for index = 1, numEntries do
+		local _, _, _, isHeader, _, _, _, _, _, _, _, _, _, _ = GetQuestLogTitle(index)
 		if ( not isHeader) then
-			RemoveQuestWatch(questIndex)
+			RemoveQuestWatch(index)
 		end
 	end
 
@@ -91,19 +97,11 @@ local function debugPrintQuestsHelper(onlyWatched)
 	end
 end
 
-local function debugPrintQuests()
-	debugPrintQuestsHelper(false)
-end
-
-local function debugPrintWatchedQuests()
-	debugPrintQuestsHelper(true)
-end
-
 local function run_update()
 	local areaid = GetCurrentMapAreaID();
 	local numEntries, _ = GetNumQuestLogEntries()
 	for questIndex = 1, numEntries do
-		local title, _, _, isHeader, _, isComplete, _, questID, _, _, isOnMap, hasLocalPOI, _, _ = GetQuestLogTitle(questIndex)
+		local _, _, _, isHeader, _, isComplete, _, questID, _, _, isOnMap, hasLocalPOI, _, _ = GetQuestLogTitle(questIndex)
 		if ( not isHeader) then
 			local questMapId, _ = GetQuestWorldMapAreaID(questID)
 			if (isComplete and removeComplete) then
@@ -120,7 +118,7 @@ local function run_update()
 	end
 end
 
-local function TriggerHandler(self, event, questIndex)
+local function EventHandler(self, event, questIndex)
 	if event == "QUEST_WATCH_UPDATE" then
 		local _, _, _, _, _, isComplete, _, _, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
 		if (removeComplete and isComplete) then
@@ -213,13 +211,13 @@ function MyPlugin:InsertOptions()
 						type = 'execute',
 						order = 1,
 						name = 'Print all quests to chat',
-						func = function() debugPrintQuests() end,
+						func = function() debugPrintQuestsHelper(false) end,
 					},
 					printWatched = {
 						type = 'execute',
 						order = 1,
 						name = 'Print tracked quests to chat',
-						func = function() debugPrintWatchedQuests() end,
+						func = function() debugPrintQuestsHelper(true) end,
 					},
 					untrack = {
 						type = 'execute',
@@ -239,12 +237,12 @@ function MyPlugin:Initialize()
 
 
 	--Register event triggers
-	SQWframe:RegisterEvent("ZONE_CHANGED")
-	SQWframe:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-	SQWframe:RegisterEvent("QUEST_WATCH_UPDATE")
-	SQWframe:RegisterEvent("QUEST_ACCEPTED")
+	frame:RegisterEvent("ZONE_CHANGED")
+	frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	frame:RegisterEvent("QUEST_WATCH_UPDATE")
+	frame:RegisterEvent("QUEST_ACCEPTED")
 
-	SQWframe:SetScript("OnEvent", TriggerHandler)
+	frame:SetScript("OnEvent", EventHandler)
 
 	untrackAllQuests()
 
