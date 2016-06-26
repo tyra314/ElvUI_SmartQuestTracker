@@ -26,31 +26,48 @@ P["ElvUI_SmartQuestTracker"] = {
 }
 
 local frame = CreateFrame("Frame")
+
+local autoTracked = {}
 local autoRemove
 local autoSort
 local removeComplete
-local autoTracked = {}
+local showDailies
 
-local function getQuestId(index)
- 	local _, _, _, _, _, _, _, questID, _, _, _, _, _, _ = GetQuestLogTitle(index)
+local function getQuestInfo(index)
+	local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(index)
 
-	return questID
+	if isHeader then
+		return nil
+	end
+
+	local questMapId, questFloorId = GetQuestWorldMapAreaID(questID)
+	local distance, reachable = GetDistanceSqToQuest(index)
+	local areaid = GetCurrentMapAreaID();
+	local isTracked = IsQuestWatched(index)
+
+	local isRepeatable = frequency == LE_QUEST_FREQUENCY_DAILY or frequency == LE_QUEST_FREQUENCY_WEEKLY
+	local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
+	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
+	local isLocal = questMapId == areaid or (questMapId == 0 and isOnMap) or hasLocalPOI
+	local isCompleted = not isComplete == nil
+	local isAutoTracked = autoTracked[questID] == true
+
+	return questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked
 end
 
 local function trackQuest(index, markAutoTracked)
-	local questID = getQuestId(index)
-	local isWatched = IsQuestWatched(index)
+	local questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked = getQuestInfo(index)
 
-	if (not isWatched) or markAutoTracked then
+	if (not isTracked) or markAutoTracked then
 		autoTracked[questID] = true
 		AddQuestWatch(index)
 	end
 end
 
 local function untrackQuest(index)
-	local questID = getQuestId(index)
+	local questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked = getQuestInfo(index)
 
-	if autoTracked[questID] and autoRemove then
+	if isAutoTracked and autoRemove then
 		autoTracked[questID] = nil
 		RemoveQuestWatch(index)
 	end
@@ -69,44 +86,21 @@ local function untrackAllQuests()
 	autoTracked = {}
 end
 
-local function debugPrintQuestsHelper(onlyWatched)
-	local areaid = GetCurrentMapAreaID();
-	print("Current MapID: " .. areaid)
-	local numEntries, numQuests = GetNumQuestLogEntries()
-	print(numQuests .. " Quests in " .. numEntries .. " Entries.")
-	local numWatches = GetNumQuestWatches()
-	print(numWatches .. " Quests tracked.")
-	print("#########################")
-
-	for questIndex = 1, numEntries do
-		local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(questIndex)
-		if ( not isHeader) then
-			local questMapId, questFloorId = GetQuestWorldMapAreaID(questID)
-			local distance, reachable = GetDistanceSqToQuest(questIndex)
-			if (not onlyWatched) or (onlyWatched and IsQuestWatched(questIndex)) then
-				print("#" .. questID .. " - |cffFF6A00" .. title .. "|r")
-				print("MapID: " .. questMapId .. " - IsOnMap: " .. tostring(isOnMap) .. " - hasLocalPOI: " .. tostring(hasLocalPOI))
-				print("Distance: " .. distance)
-				if autoTracked[questID] then
-					print("AutoTracked: yes")
-				else
-					print("AutoTracked: no")
-				end
-			end
-		end
-	end
-end
-
 local function run_update()
 	local areaid = GetCurrentMapAreaID();
+	local inInstance, instanceType = IsInInstance()
 	local numEntries, _ = GetNumQuestLogEntries()
 	for questIndex = 1, numEntries do
-		local _, _, _, isHeader, _, isComplete, _, questID, _, _, isOnMap, hasLocalPOI, _, _ = GetQuestLogTitle(questIndex)
-		if ( not isHeader) then
-			local questMapId, _ = GetQuestWorldMapAreaID(questID)
+		local questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked = getQuestInfo(questIndex)
+
+		if not (questID == nil) then
 			if (isComplete and removeComplete) then
 				untrackQuest(questIndex)
-			elseif questMapId == areaid or (questMapId == 0 and isOnMap) or hasLocalPOI then
+			elseif isLocal then
+				trackQuest(questIndex)
+			elseif showDailies and isDaily and not inInstance then
+				trackQuest(questIndex)
+			elseif showDailies and isWeekly then
 				trackQuest(questIndex)
 			else
 				untrackQuest(questIndex)
@@ -118,18 +112,36 @@ local function run_update()
 	end
 end
 
-local function EventHandler(self, event, questIndex)
-	if event == "QUEST_WATCH_UPDATE" then
-		local _, _, _, _, _, isComplete, _, _, _, _, _, _, _, _ = GetQuestLogTitle(questIndex)
-		if (removeComplete and isComplete) then
-			untrackQuest(questIndex)
-		else
-			trackQuest(questIndex, true)
+local function debugPrintQuestsHelper(onlyWatched)
+	local areaid = GetCurrentMapAreaID();
+	print("#########################")
+	print("Current MapID: " .. areaid)
+
+	local inInstance, instanceType = IsInInstance()
+
+	print("In instance: " .. tostring(inInstance))
+	print("Instance type: " .. instanceType)
+
+	local numEntries, numQuests = GetNumQuestLogEntries()
+	print(numQuests .. " Quests in " .. numEntries .. " Entries.")
+	local numWatches = GetNumQuestWatches()
+	print(numWatches .. " Quests tracked.")
+	print("#########################")
+
+	for questIndex = 1, numEntries do
+		local questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked = getQuestInfo(questIndex)
+		if not (questID == nil) then
+			if (not onlyWatched) or (onlyWatched and isTracked) then
+				print("#" .. questID .. " - |cffFF6A00" .. title .. "|r")
+				print("Completed: ".. tostring(isCompleted))
+				print("IsLocal: " .. tostring(isLocal))
+				print("Distance: " .. distance)
+				print("AutoTracked: " .. tostring(isAutoTracked))
+				print("Is repeatable: " .. tostring(isRepeatable))
+				print("Is Daily: " .. tostring(isDaily))
+				print("Is Weekly: " .. tostring(isWeekly))
+			end
 		end
-	elseif event == "QUEST_ACCEPTED" then
-		trackQuest(questIndex, true)
-	else
-		run_update()
 	end
 end
 
@@ -138,7 +150,29 @@ function MyPlugin:Update()
 	autoRemove = E.db.ElvUI_SmartQuestTracker.AutoRemove
 	autoSort =  E.db.ElvUI_SmartQuestTracker.AutoSort
 	removeComplete = E.db.ElvUI_SmartQuestTracker.RemoveComplete
+	showDailies = E.db.ElvUI_SmartQuestTracker.ShowDailies
 
+	run_update()
+end
+
+function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
+	local questID, title, isLocal, distance, isRepeatable, isDaily, isWeekly, isCompleted, isTracked, isAutoTracked = getQuestInfo(questIndex)
+	if (removeComplete and isCompleted) then
+		untrackQuest(questIndex)
+	else
+		trackQuest(questIndex, true)
+	end
+end
+
+function MyPlugin:QUEST_ACCEPTED(event, questIndex)
+	trackQuest(questIndex, true)
+end
+
+function MyPlugin:ZONE_CHANGED()
+	run_update()
+end
+
+function MyPlugin:ZONE_CHANGED_NEW_AREA()
 	run_update()
 end
 
@@ -179,12 +213,24 @@ function MyPlugin:InsertOptions()
 							MyPlugin:Update() --We changed a setting, call our Update function
 						end,
 					},
+					showDailies = {
+						order = 3,
+						type = "toggle",
+						name = "Keep daily and weekly quest tracked",
+						get = function(info)
+							return E.db.ElvUI_SmartQuestTracker.ShowDailies
+						end,
+						set = function(info, value)
+							E.db.ElvUI_SmartQuestTracker.ShowDailies = value
+							MyPlugin:Update()
+						end,
+					},
 				},
 			},
 			sort = {
 				order = 2,
 				type = "group",
-				name = L['Sort of quests in tracker'],
+				name = L['Sorting of quests in tracker'],
 				guiInline = true,
 				args = {
 					autosort = {
@@ -209,13 +255,13 @@ function MyPlugin:InsertOptions()
 				args = {
 					print = {
 						type = 'execute',
-						order = 1,
+						order = 2,
 						name = 'Print all quests to chat',
 						func = function() debugPrintQuestsHelper(false) end,
 					},
 					printWatched = {
 						type = 'execute',
-						order = 1,
+						order = 3,
 						name = 'Print tracked quests to chat',
 						func = function() debugPrintQuestsHelper(true) end,
 					},
@@ -224,6 +270,12 @@ function MyPlugin:InsertOptions()
 						order = 1,
 						name = 'Untrack all quests',
 						func = function() untrackAllQuests() end,
+					},
+					update = {
+						type = 'execute',
+						order = 4,
+						name = 'Force update of tracked quests',
+						func = function() run_update() end,
 					},
 				},
 			},
@@ -237,15 +289,12 @@ function MyPlugin:Initialize()
 
 
 	--Register event triggers
-	frame:RegisterEvent("ZONE_CHANGED")
-	frame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-	frame:RegisterEvent("QUEST_WATCH_UPDATE")
-	frame:RegisterEvent("QUEST_ACCEPTED")
-
-	frame:SetScript("OnEvent", EventHandler)
+	MyPlugin:RegisterEvent("ZONE_CHANGED")
+	MyPlugin:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	MyPlugin:RegisterEvent("QUEST_WATCH_UPDATE")
+	MyPlugin:RegisterEvent("QUEST_ACCEPTED")
 
 	untrackAllQuests()
-
 	MyPlugin:Update()
 end
 
