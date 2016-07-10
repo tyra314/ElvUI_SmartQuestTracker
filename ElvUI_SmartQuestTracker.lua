@@ -25,7 +25,38 @@ P["ElvUI_SmartQuestTracker"] = {
 	["AutoSort"] = true,
 }
 
-local frame = CreateFrame("Frame")
+-- Wait function taken from http://wowwiki.wikia.com/wiki/USERAPI_wait
+local waitTable = {};
+local waitFrame = nil;
+
+function SmartQuestTracker_wait(delay, func, ...)
+  if(type(delay)~="number" or type(func)~="function") then
+    return false;
+  end
+  if(waitFrame == nil) then
+    waitFrame = CreateFrame("Frame","WaitFrame", UIParent);
+    waitFrame:SetScript("onUpdate",function (self,elapse)
+      local count = #waitTable;
+      local i = 1;
+      while(i<=count) do
+        local waitRecord = tremove(waitTable,i);
+        local d = tremove(waitRecord,1);
+        local f = tremove(waitRecord,1);
+        local p = tremove(waitRecord,1);
+        if(d>elapse) then
+          tinsert(waitTable,i,{d-elapse,f,p});
+          i = i + 1;
+        else
+          count = count - 1;
+          f(unpack(p));
+        end
+      end
+    end);
+  end
+  tinsert(waitTable,{delay,func,{...}});
+  return true;
+end
+-- end wait function
 
 local autoTracked = {}
 local autoRemove
@@ -169,11 +200,11 @@ function MyPlugin:QUEST_ACCEPTED(event, questIndex)
 end
 
 function MyPlugin:ZONE_CHANGED()
-	run_update()
+	SmartQuestTracker_wait(0.1, run_update)
 end
 
 function MyPlugin:ZONE_CHANGED_NEW_AREA()
-	run_update()
+	SmartQuestTracker_wait(0.1, run_update)
 end
 
 --This function inserts our GUI table into the ElvUI Config. You can read about AceConfig here: http://www.wowace.com/addons/ace3/pages/ace-config-3-0-options-tables/
