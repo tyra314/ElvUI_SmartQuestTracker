@@ -23,46 +23,20 @@ P["ElvUI_SmartQuestTracker"] = {
 	["RemoveComplete"] = false,
 	["AutoRemove"] = true,
 	["AutoSort"] = true,
+	["ShowDailies"] = false
 }
-
--- Wait function taken from http://wowwiki.wikia.com/wiki/USERAPI_wait
-local waitTable = {};
-local waitFrame = nil;
-
-function SmartQuestTracker_wait(delay, func, ...)
-  if(type(delay)~="number" or type(func)~="function") then
-    return false;
-  end
-  if(waitFrame == nil) then
-    waitFrame = CreateFrame("Frame","WaitFrame", UIParent);
-    waitFrame:SetScript("onUpdate",function (self,elapse)
-      local count = #waitTable;
-      local i = 1;
-      while(i<=count) do
-        local waitRecord = tremove(waitTable,i);
-        local d = tremove(waitRecord,1);
-        local f = tremove(waitRecord,1);
-        local p = tremove(waitRecord,1);
-        if(d>elapse) then
-          tinsert(waitTable,i,{d-elapse,f,p});
-          i = i + 1;
-        else
-          count = count - 1;
-          f(unpack(p));
-        end
-      end
-    end);
-  end
-  tinsert(waitTable,{delay,func,{...}});
-  return true;
-end
--- end wait function
 
 local autoTracked = {}
 local autoRemove
 local autoSort
 local removeComplete
 local showDailies
+
+-- control variables to pass arguments from on event handler to another
+local skippedUpdate = false
+local updateQuestIndex = nil
+local newQuestIndex = nil
+local doUpdate = false
 
 local function getQuestInfo(index)
 	local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(index)
@@ -76,17 +50,27 @@ local function getQuestInfo(index)
 	local areaid = GetCurrentMapAreaID();
 	local isTracked = IsQuestWatched(index)
 
-	local isRepeatable = frequency == LE_QUEST_FREQUENCY_DAILY or frequency == LE_QUEST_FREQUENCY_WEEKLY
 	local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
 	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
-	local isLocal = questMapId == areaid or (questMapId == 0 and isOnMap) or hasLocalPOI
-	local isCompleted = not isComplete == nil
+	local isRepeatable = isDaily or isWeekly
+	local isLocal = questMapId == areaid or (questMapId == 0 and isOnMap) --or hasLocalPOI
+	local isCompleted = isComplete ~= nil
 	local isAutoTracked = autoTracked[questID] == true
+	local tagId = GetQuestTagInfo(questID)
+	local isInstance = tagId == QUEST_TAG_DUNGEON or tagId == QUEST_TAG_HEROIC or tagId == QUEST_TAG_RAID or tagId == QUEST_TAG_RAID10 or tagId == QUEST_TAG_RAID25
+	local playerInInstance, _ = IsInInstance()
+	if isInstance and not playerInInstance and not isCompleted then
+		isLocal = false
+	end
 
-
-	quest = {};
+	local quest = {};
 
     quest["id"] = questID
+	quest["mapID"] = tostring(questMapId) .. "#" .. tostring(questFloorId)
+	quest["areaLocal"] = questMapId == areaid
+	quest["isOnMap"] = questMapId == 0 and isOnMap
+	quest["hasLocalPOI"] = hasLocalPOI
+	quest["isInstance"] = isInstance
     quest["title"] = title
     quest["isLocal"] = isLocal
     quest["distance"] = distance
@@ -143,7 +127,7 @@ local function run_update()
 		local quest = getQuestInfo(questIndex)
 
 		if not (quest == nil) then
-			if (quest["isComplete"] and removeComplete) then
+			if quest["isComplete"] and removeComplete then
 				untrackQuest(questIndex, quest)
 			elseif quest["isLocal"] then
 				trackQuest(questIndex, quest)
@@ -184,6 +168,11 @@ local function debugPrintQuestsHelper(onlyWatched)
 				print("#" .. quest["id"] .. " - |cffFF6A00" .. quest["title"] .. "|r")
 				print("Completed: ".. tostring(quest["isCompleted"]))
 				print("IsLocal: " .. tostring(quest["isLocal"]))
+				print("MapID: " .. tostring(quest["mapID"]))
+				print("IsAreaLocal: " .. tostring(quest["areaLocal"]))
+				print("IsOnMap: " .. tostring(quest["isOnMap"]))
+				print("hasLocalPOI: " .. tostring(quest["hasLocalPOI"]))
+				print("isInstance: " .. tostring(quest["isInstance"]))
 				print("Distance: " .. quest["distance"])
 				print("AutoTracked: " .. tostring(quest["isAutoTracked"]))
 				print("Is repeatable: " .. tostring(quest["isRepeatable"]))
@@ -201,30 +190,83 @@ function MyPlugin:Update()
 	removeComplete = E.db.ElvUI_SmartQuestTracker.RemoveComplete
 	showDailies = E.db.ElvUI_SmartQuestTracker.ShowDailies
 
-	SmartQuestTracker_wait(0.1, untrackAllQuests)
-	SmartQuestTracker_wait(0.5, run_update)
+	untrackAllQuests()
+	doUpdate = true
 end
 
+-- event handlers
+
 function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
-	local quest = getQuestInfo(questIndex)
-	if (removeComplete and quest["isCompleted"]) then
-		untrackQuest(questIndex, quest)
-	else
-		trackQuest(questIndex, quest, true)
+	if updateQuestIndex ~= nil then
+		-- at least we tried
+		local quest = getQuestInfo(questIndex)
+		if quest ~= nil then
+			updateQuestIndex = nil
+			if (removeComplete and quest["isCompleted"]) then
+				untrackQuest(questIndex, quest)
+			else
+				trackQuest(questIndex, quest, true)
+			end
+		end
+	end
+
+	updateQuestIndex = questIndex
+end
+
+function MyPlugin:QUEST_LOG_UPDATE(event)
+	if updateQuestIndex ~= nil then
+		local questIndex = updateQuestIndex
+		local quest = getQuestInfo(questIndex)
+		if quest ~= nil then
+			updateQuestIndex = nil
+			if (removeComplete and quest["isCompleted"]) then
+				untrackQuest(questIndex, quest)
+			else
+				trackQuest(questIndex, quest, true)
+			end
+		end
+	end
+
+	if doUpdate then
+		doUpdate = false
+		run_update()
+	end
+
+	if newQuestIndex ~= nil then
+		local questIndex = newQuestIndex
+		local quest = getQuestInfo(questIndex)
+		if quest ~= nil then
+			newQuestIndex = nil
+			trackQuest(questIndex, quest, true)
+		end
 	end
 end
 
 function MyPlugin:QUEST_ACCEPTED(event, questIndex)
-	local quest = getQuestInfo(questIndex)
-    trackQuest(questIndex, quest, true)
+	newQuestIndex = questIndex
 end
 
 function MyPlugin:ZONE_CHANGED()
-	SmartQuestTracker_wait(0.1, run_update)
+	if not WorldMapFrame:IsVisible() then
+		doUpdate = true
+	else
+		skippedUpdate = true
+	end
 end
 
 function MyPlugin:ZONE_CHANGED_NEW_AREA()
-	SmartQuestTracker_wait(0.1, run_update)
+	if not WorldMapFrame:IsVisible() then
+		doUpdate = true
+	else
+		skippedUpdate = true
+	end
+end
+
+function MyPlugin:WORLD_MAP_UPDATE()
+	if skippedUpdate and not WorldMapFrame:IsVisible() then
+		skippedUpdate = false
+		run_update()
+	end
 end
 
 --This function inserts our GUI table into the ElvUI Config. You can read about AceConfig here: http://www.wowace.com/addons/ace3/pages/ace-config-3-0-options-tables/
@@ -343,7 +385,9 @@ function MyPlugin:Initialize()
 	MyPlugin:RegisterEvent("ZONE_CHANGED")
 	MyPlugin:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 	MyPlugin:RegisterEvent("QUEST_WATCH_UPDATE")
+	MyPlugin:RegisterEvent("QUEST_LOG_UPDATE")
 	MyPlugin:RegisterEvent("QUEST_ACCEPTED")
+	MyPlugin:RegisterEvent("WORLD_MAP_UPDATE")
 
 	MyPlugin:Update()
 end
