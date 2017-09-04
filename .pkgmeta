@@ -1,4 +1,4 @@
-package-as: SmartQuestTracker
+package-as: ElvUI_SmartQuestTracker
 
 ignore:
     - .gitignore
