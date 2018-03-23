@@ -13,6 +13,17 @@
 	If you have questions then ask in the Tukui lua section: http://www.tukui.org/forums/forum.php?id=27
 ]]
 
+local function DebugLog(...)
+--@debug@
+printResult = "|cffFF6A00Smart Quest Tracker|r: "
+for i,v in ipairs({...}) do
+	printResult = printResult .. tostring(v) .. " "
+end
+print(printResult)
+DEFAULT_CHAT_FRAME:AddMessage(printResult)
+--@end-debug@
+end
+
 local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, ProfileDB, GlobalDB
 local MyPlugin = E:NewModule('ElvUI_SmartQuestTracker', 'AceHook-3.0', 'AceEvent-3.0', 'AceTimer-3.0'); --Create a plugin within ElvUI and adopt AceHook-3.0, AceEvent-3.0 and AceTimer-3.0. We can make use of these later.
 local EP = LibStub("LibElvUIPlugin-1.0") --We can use this to automatically insert our GUI tables when ElvUI_Config is loaded.
@@ -80,13 +91,16 @@ local function getQuestInfo(index)
     quest["isCompleted"] = isCompleted
     quest["isTracked"] = isTracked
     quest["isAutoTracked"] = isAutoTracked
+	quest["isWorldQuest"] = isTask
 
 	return quest
 end
 
 local function trackQuest(index, quest, markAutoTracked)
 	if (not quest["isTracked"]) or markAutoTracked then
-		autoTracked[quest["id"]] = true
+		if not quest["isWorldQuest"] then
+			autoTracked[quest["id"]] = true
+		end
 		AddQuestWatch(index)
 	end
 
@@ -120,6 +134,8 @@ local function untrackAllQuests()
 end
 
 local function run_update()
+	DebugLog("Running full update")
+
 	local areaid = GetCurrentMapAreaID();
 	local inInstance, instanceType = IsInInstance()
 	local numEntries, _ = GetNumQuestLogEntries()
@@ -197,17 +213,10 @@ end
 -- event handlers
 
 function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
+	DebugLog("Update for quest:", questIndex)
+
 	if updateQuestIndex ~= nil then
-		-- at least we tried
-		local quest = getQuestInfo(questIndex)
-		if quest ~= nil then
-			updateQuestIndex = nil
-			if (removeComplete and quest["isCompleted"]) then
-				untrackQuest(questIndex, quest)
-			else
-				trackQuest(questIndex, quest, true)
-			end
-		end
+		DebugLog("Already had a queued quest update:", updateQuestIndex)
 	end
 
 	updateQuestIndex = questIndex
@@ -215,6 +224,8 @@ end
 
 function MyPlugin:QUEST_LOG_UPDATE(event)
 	if updateQuestIndex ~= nil then
+		DebugLog("Running update for quest:", updateQuestIndex)
+
 		local questIndex = updateQuestIndex
 		local quest = getQuestInfo(questIndex)
 		if quest ~= nil then
@@ -233,6 +244,7 @@ function MyPlugin:QUEST_LOG_UPDATE(event)
 	end
 
 	if newQuestIndex ~= nil then
+		DebugLog("Running update for new quest:", newQuestIndex)
 		local questIndex = newQuestIndex
 		local quest = getQuestInfo(questIndex)
 		if quest ~= nil then
@@ -244,6 +256,12 @@ end
 
 function MyPlugin:QUEST_ACCEPTED(event, questIndex)
 	newQuestIndex = questIndex
+	DebugLog("Accepted new quest:", questIndex)
+end
+
+function MyPlugin:QUEST_REMOVED(event, questIndex)
+	DebugLog("REMOVED:", questIndex)
+	autoTracked[questIndex] = nil
 end
 
 function MyPlugin:ZONE_CHANGED()
@@ -387,6 +405,7 @@ function MyPlugin:Initialize()
 	MyPlugin:RegisterEvent("QUEST_WATCH_UPDATE")
 	MyPlugin:RegisterEvent("QUEST_LOG_UPDATE")
 	MyPlugin:RegisterEvent("QUEST_ACCEPTED")
+	MyPlugin:RegisterEvent("QUEST_REMOVED")
 	MyPlugin:RegisterEvent("WORLD_MAP_UPDATE")
 
 	MyPlugin:Update()

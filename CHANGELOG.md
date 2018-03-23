@@ -1,3 +1,15 @@
+v2.0.12:
+
+-   Improved handling of world quests
+-   (Internal) More code share between standalone version
+-   (Internal) Adds debug output
+-   (Internal) Bump version to standalone version
+
+v2.0.10:
+
+-   Interface version bump to 7.3
+-   (Internal) Change build process of addon.
+
 v2.0.10:
 
 -   Interface version bump to 7.3
