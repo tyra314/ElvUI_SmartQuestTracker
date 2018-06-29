@@ -143,7 +143,7 @@ local function run_update()
 		local quest = getQuestInfo(questIndex)
 
 		if not (quest == nil) then
-			if quest["isComplete"] and removeComplete then
+			if quest["isCompleted"] and removeComplete then
 				untrackQuest(questIndex, quest)
 			elseif quest["isLocal"] then
 				trackQuest(questIndex, quest)
