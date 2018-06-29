@@ -1,3 +1,7 @@
+v2.0.13:
+
+-   Fixes untracking of completed quests
+
 v2.0.12:
 
 -   Improved handling of world quests
