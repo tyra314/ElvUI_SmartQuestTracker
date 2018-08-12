@@ -19,7 +19,6 @@ printResult = "|cffFF6A00Smart Quest Tracker|r: "
 for i,v in ipairs({...}) do
 	printResult = printResult .. tostring(v) .. " "
 end
-print(printResult)
 DEFAULT_CHAT_FRAME:AddMessage(printResult)
 --@end-debug@
 end
@@ -50,72 +49,48 @@ local newQuestIndex = nil
 local doUpdate = false
 
 local function getQuestInfo(index)
-	local title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isStory = GetQuestLogTitle(index)
+	local _, _, _, isHeader, _, isComplete, frequency, questID, _, _, isOnMap, _, isTask, _ = GetQuestLogTitle(index)
 
 	if isHeader then
 		return nil
 	end
 
-	local questMapId, questFloorId = GetQuestWorldMapAreaID(questID)
+	local questMapId = GetQuestUiMapID(questID)
 	local distance, reachable = GetDistanceSqToQuest(index)
-	local areaid = GetCurrentMapAreaID();
-	local isTracked = IsQuestWatched(index)
+	local areaid = C_Map.GetBestMapForUnit("player");
 
-	local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
+    local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
 	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
-	local isRepeatable = isDaily or isWeekly
-	local isLocal = questMapId == areaid or (questMapId == 0 and isOnMap) --or hasLocalPOI
+
 	local isCompleted = isComplete ~= nil
-	local isAutoTracked = autoTracked[questID] == true
+
 	local tagId = GetQuestTagInfo(questID)
-	local isInstance = tagId == QUEST_TAG_DUNGEON or tagId == QUEST_TAG_HEROIC or tagId == QUEST_TAG_RAID or tagId == QUEST_TAG_RAID10 or tagId == QUEST_TAG_RAID25
-	local playerInInstance, _ = IsInInstance()
-	if isInstance and not playerInInstance and not isCompleted then
-		isLocal = false
+	local isInstance = false
+	if tagId then
+	    isInstance = tagId == QUEST_TAG_DUNGEON or tagId == QUEST_TAG_HEROIC or tagId == QUEST_TAG_RAID or tagId == QUEST_TAG_RAID10 or tagId == QUEST_TAG_RAID25
 	end
 
-	local quest = {};
-
-    quest["id"] = questID
-	quest["mapID"] = tostring(questMapId) .. "#" .. tostring(questFloorId)
-	quest["areaLocal"] = questMapId == areaid
-	quest["isOnMap"] = questMapId == 0 and isOnMap
-	quest["hasLocalPOI"] = hasLocalPOI
-	quest["isInstance"] = isInstance
-    quest["title"] = title
-    quest["isLocal"] = isLocal
-    quest["distance"] = distance
-    quest["isRepeatable"] = isRepeatable
-    quest["isDaily"] = isDaily
-    quest["isWeekly"] = isWeekly
-    quest["isCompleted"] = isCompleted
-    quest["isTracked"] = isTracked
-    quest["isAutoTracked"] = isAutoTracked
-	quest["isWorldQuest"] = isTask
-
-	return quest
+	return questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isTask
 end
 
-local function trackQuest(index, quest, markAutoTracked)
-	if (not quest["isTracked"]) or markAutoTracked then
-		if not quest["isWorldQuest"] then
-			autoTracked[quest["id"]] = true
-		end
+local function trackQuest(index, questID, markAutoTracked)
+	if autoTracked[questID] ~= true and markAutoTracked then
+		autoTracked[questID] = true
 		AddQuestWatch(index)
 	end
 
-	if autoSort then
+    if autoSort then
 		SortQuestWatches()
 	end
 end
 
-local function untrackQuest(index, quest)
-	if quest["isAutoTracked"] and autoRemove then
-		autoTracked[quest["id"]] = nil
+local function untrackQuest(index, questID)
+	if autoTracked[questID] == true then
 		RemoveQuestWatch(index)
+		autoTracked[questID] = nil
 	end
 
-	if autoSort then
+    if autoSort then
 		SortQuestWatches()
 	end
 end
@@ -134,35 +109,14 @@ local function untrackAllQuests()
 end
 
 local function run_update()
+	--@debug@
 	DebugLog("Running full update")
-
-	local areaid = GetCurrentMapAreaID();
-	local inInstance, instanceType = IsInInstance()
-	local numEntries, _ = GetNumQuestLogEntries()
-	for questIndex = 1, numEntries do
-		local quest = getQuestInfo(questIndex)
-
-		if not (quest == nil) then
-			if quest["isCompleted"] and removeComplete then
-				untrackQuest(questIndex, quest)
-			elseif quest["isLocal"] then
-				trackQuest(questIndex, quest)
-			elseif showDailies and quest["isDaily"] and not inInstance then
-				trackQuest(questIndex, quest)
-			elseif showDailies and quest["isWeekly"] then
-				trackQuest(questIndex, quest)
-			else
-				untrackQuest(questIndex, quest)
-			end
-		end
-	end
-	if autoSort then
-		SortQuestWatches()
-	end
+	--@end-debug@
+	MyPlugin:RunUpdate()
 end
 
 local function debugPrintQuestsHelper(onlyWatched)
-	local areaid = GetCurrentMapAreaID();
+	local areaid = C_Map.GetBestMapForUnit("player");
 	print("#########################")
 	print("Current MapID: " .. areaid)
 
@@ -178,22 +132,13 @@ local function debugPrintQuestsHelper(onlyWatched)
 	print("#########################")
 
 	for questIndex = 1, numEntries do
-		local quest = getQuestInfo(questIndex)
-		if not (quest == nil) then
-			if (not onlyWatched) or (onlyWatched and quest["isTracked"]) then
-				print("#" .. quest["id"] .. " - |cffFF6A00" .. quest["title"] .. "|r")
-				print("Completed: ".. tostring(quest["isCompleted"]))
-				print("IsLocal: " .. tostring(quest["isLocal"]))
-				print("MapID: " .. tostring(quest["mapID"]))
-				print("IsAreaLocal: " .. tostring(quest["areaLocal"]))
-				print("IsOnMap: " .. tostring(quest["isOnMap"]))
-				print("hasLocalPOI: " .. tostring(quest["hasLocalPOI"]))
-				print("isInstance: " .. tostring(quest["isInstance"]))
-				print("Distance: " .. quest["distance"])
-				print("AutoTracked: " .. tostring(quest["isAutoTracked"]))
-				print("Is repeatable: " .. tostring(quest["isRepeatable"]))
-				print("Is Daily: " .. tostring(quest["isDaily"]))
-				print("Is Weekly: " .. tostring(quest["isWeekly"]))
+		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest = getQuestInfo(questIndex)
+		if not (questID == nil) then
+			if (not onlyWatched) or (onlyWatched and autoTracked[questID] == true) then
+				print("#" .. questID .. " - |cffFF6A00" .. select(1, GetQuestLogTitle(questIndex)) .. "|r")
+                print("MapID: " .. tostring(questMapId) .. " IsOnMap: " .. tostring(isOnMap) .. " isInstance: " .. tostring(isInstance))
+				print("AutoTracked: " .. tostring(autoTracked[questID] == true) .. "isLocal: " .. tostring(((questMapId == 0 and isOnMap) or (questMapId == areaid)) and not (isInstance and not inInstance and not isCompleted)))
+				print("Completed: ".. tostring(isCompleted) .. " Daily: " .. tostring(isDaily) .. " Weekly: " .. tostring(isWeekly) .. " WorldQuest: " .. tostring(isWorldQuest))
 			end
 		end
 	end
@@ -207,7 +152,68 @@ function MyPlugin:Update()
 	showDailies = E.db.ElvUI_SmartQuestTracker.ShowDailies
 
 	untrackAllQuests()
-	doUpdate = true
+	run_update()
+end
+
+function MyPlugin:RunUpdate()
+	if self.update_running ~= true then
+		self.update_running = true
+
+		-- Update play information cache, so we don't run it for every quest
+		self.areaID = C_Map.GetBestMapForUnit("player");
+		self.inInstance = select(1, IsInInstance())
+
+		--@debug@
+		DebugLog("MyPlugin:RunUpdate")
+		--@end-debug@
+		self:ScheduleTimer("PartialUpdate", 0.01, 1)
+	else
+		self.update_required = true
+	end
+end
+
+function MyPlugin:PartialUpdate(index)
+	local numEntries, _ = GetNumQuestLogEntries()
+
+	if index >= numEntries then
+		--@debug@
+		DebugLog("Finished partial updates")
+		--@end-debug@
+
+		if self.update_required == true then
+			self.update_required = nil
+			self.inInstance = select(1, IsInInstance())
+			self.areaID = areaID
+			--@debug@
+			DebugLog("Reschedule partial update")
+			--@end-debug@
+			self:ScheduleTimer("PartialUpdate", 0.01, 1)
+		else
+			if autoSort then
+				SortQuestWatches()
+			end
+			self.update_running = nil
+		end
+
+		return
+	end
+
+	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest = getQuestInfo(index)
+	if not (questID == nil) then
+		if isCompleted and removeComplete then
+			untrackQuest(index, questID)
+		elseif ((questMapId == 0 and isOnMap) or (questMapId == self.areaID)) and not (isInstance and not self.inInstance and not isCompleted) then
+			trackQuest(index, questID, not isWorldQuest)
+		elseif showDailies and isDaily and not inInstance then
+			trackQuest(index, questID, not isWorldQuest)
+		elseif showDailies and isWeekly then
+			trackQuest(index, questID, not isWorldQuest)
+		else
+			untrackQuest(index, questID)
+		end
+	end
+
+	self:ScheduleTimer("PartialUpdate", 0.01, index + 1)
 end
 
 -- event handlers
@@ -215,77 +221,52 @@ end
 function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
 	DebugLog("Update for quest:", questIndex)
 
-	if updateQuestIndex ~= nil then
-		DebugLog("Already had a queued quest update:", updateQuestIndex)
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest = getQuestInfo(questIndex)
+	if questID ~= nil then
+		updateQuestIndex = nil
+		if removeComplete and isCompleted then
+			untrackQuest(questIndex, questID)
+		elseif not isWorldQuest then
+			trackQuest(questIndex, questID, not isWorldQuest)
+		end
 	end
-
-	updateQuestIndex = questIndex
 end
 
 function MyPlugin:QUEST_LOG_UPDATE(event)
-	if updateQuestIndex ~= nil then
-		DebugLog("Running update for quest:", updateQuestIndex)
-
-		local questIndex = updateQuestIndex
-		local quest = getQuestInfo(questIndex)
-		if quest ~= nil then
-			updateQuestIndex = nil
-			if (removeComplete and quest["isCompleted"]) then
-				untrackQuest(questIndex, quest)
-			else
-				trackQuest(questIndex, quest, true)
-			end
-		end
-	end
-
-	if doUpdate then
-		doUpdate = false
-		run_update()
-	end
-
-	if newQuestIndex ~= nil then
-		DebugLog("Running update for new quest:", newQuestIndex)
-		local questIndex = newQuestIndex
-		local quest = getQuestInfo(questIndex)
-		if quest ~= nil then
-			newQuestIndex = nil
-			trackQuest(questIndex, quest, true)
-		end
-	end
+	DebugLog("Running update for quests")
+	-- run_update()
 end
 
 function MyPlugin:QUEST_ACCEPTED(event, questIndex)
-	newQuestIndex = questIndex
 	DebugLog("Accepted new quest:", questIndex)
+
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest = getQuestInfo(questIndex)
+	if questID ~= nil then
+		updateQuestIndex = nil
+		if removeComplete and isCompleted then
+			untrackQuest(questIndex, questID)
+		elseif not isWorldQuest then
+			trackQuest(questIndex, questID, not isWorldQuest)
+		end
+	end
 end
 
 function MyPlugin:QUEST_REMOVED(event, questIndex)
 	DebugLog("REMOVED:", questIndex)
 	autoTracked[questIndex] = nil
+	-- run_update()
 end
 
 function MyPlugin:ZONE_CHANGED()
-	if not WorldMapFrame:IsVisible() then
-		doUpdate = true
-	else
-		skippedUpdate = true
-	end
+	DebugLog("ZONE_CHANGED")
+	run_update()
 end
 
 function MyPlugin:ZONE_CHANGED_NEW_AREA()
-	if not WorldMapFrame:IsVisible() then
-		doUpdate = true
-	else
-		skippedUpdate = true
-	end
+	DebugLog("ZONE_CHANGED_NEW_AREA")
+	run_update()
 end
 
-function MyPlugin:WORLD_MAP_UPDATE()
-	if skippedUpdate and not WorldMapFrame:IsVisible() then
-		skippedUpdate = false
-		run_update()
-	end
-end
 
 --This function inserts our GUI table into the ElvUI Config. You can read about AceConfig here: http://www.wowace.com/addons/ace3/pages/ace-config-3-0-options-tables/
 function MyPlugin:InsertOptions()
@@ -406,7 +387,6 @@ function MyPlugin:Initialize()
 	MyPlugin:RegisterEvent("QUEST_LOG_UPDATE")
 	MyPlugin:RegisterEvent("QUEST_ACCEPTED")
 	MyPlugin:RegisterEvent("QUEST_REMOVED")
-	MyPlugin:RegisterEvent("WORLD_MAP_UPDATE")
 
 	MyPlugin:Update()
 end

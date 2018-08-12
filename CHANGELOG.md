@@ -1,3 +1,9 @@
+v3.1.0:
+
+-   Update to BfA prepatch
+-   Performance improvemtents
+-   Distributing update of quests over several frames to decrease lag
+
 v2.0.13:
 
 -   Fixes untracking of completed quests
