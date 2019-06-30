@@ -1,4 +1,4 @@
-## Interface: 80100
+## Interface: 80200
 ## Author: tyra314
 ## Version: @project-version@
 ## Title: |cff1784d1ElvUI|r |cffFF6A00Smart Quest Tracker|r
