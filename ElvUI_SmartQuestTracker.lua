@@ -1,5 +1,5 @@
 --[[
-	Copyright 2016 tyra <https://twitter.com/tyra_314>. All rights reserved.
+	Copyright 2019 tyra <https://twitter.com/tyra_314>. All rights reserved.
 
 	This work is licensed under the Creative Commons Attribution-NonCommercial-
 	ShareAlike 4.0 International License. To view a copy of this license, visit
@@ -30,7 +30,9 @@ local addonName, addonTable = ... --See http://www.wowinterface.com/forums/showt
 
 --Default options
 P["ElvUI_SmartQuestTracker"] = {
-	["RemoveComplete"] = false,
+	["HandlingComplete"] = "keep_local",
+	["RemoveLegendary"] = true,
+	["RemoveWaypoints"] = false,
 	["AutoRemove"] = true,
 	["AutoSort"] = true,
 	["ShowDailies"] = false
@@ -40,7 +42,10 @@ local autoTracked = {}
 local autoRemove
 local autoSort
 local removeComplete
+local keepComplete
+local removeLegendary
 local showDailies
+local removeWaypoints
 
 -- control variables to pass arguments from on event handler to another
 local skippedUpdate = false
@@ -49,15 +54,30 @@ local newQuestIndex = nil
 local doUpdate = false
 
 local function getQuestInfo(index)
-	local _, _, _, isHeader, _, isComplete, frequency, questID, _, _, isOnMap, _, isTask, _ = GetQuestLogTitle(index)
+	--     title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(questLogIndex)
+	local  title,     _,              _, isHeader,           _, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(index)
+	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(questID)
+
+	local QuestZoneID = C_TaskQuest.GetQuestZoneID(questID)
+	local nextWaypoint = C_QuestLog.GetNextWaypoint(questID)
+
+	--@debug@
+	print("%%%%%%%%%" .. tostring(title) .. "%%%%%%%")
+	--@end-debug@
 
 	if isHeader then
 		return nil
 	end
 
-	local questMapId = GetQuestUiMapID(questID)
+	local questMapId = C_TaskQuest.GetQuestZoneID(questID)
+	if questMapId == nil then
+		questMapId = GetQuestUiMapID(questID)
+	end
+	if nextWaypoint ~= nil and nextWaypoint ~= questMapId and removeWaypoints then
+		questMapId = 0
+	end
 	local distance, reachable = GetDistanceSqToQuest(index)
-	local areaid = C_Map.GetBestMapForUnit("player");
+	local areaid = C_Map.GetBestMapForUnit("player")
 
     local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
 	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
@@ -70,7 +90,11 @@ local function getQuestInfo(index)
 	    isInstance = tagId == QUEST_TAG_DUNGEON or tagId == QUEST_TAG_HEROIC or tagId == QUEST_TAG_RAID or tagId == QUEST_TAG_RAID10 or tagId == QUEST_TAG_RAID25
 	end
 
-	return questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isTask
+	--@debug@
+	print("isHeader: ".. tostring(isHeader) .. " isComplete: ".. tostring(isCompleted) .. " nextWaypoint: ".. tostring(nextWaypoint) .. " questMapId: ".. tostring(questMapId) .." QuestZoneID: ".. tostring(QuestZoneID) .. " areaid: ".. tostring(areaid) .. " hasLocalPOI: ".. tostring(hasLocalPOI) .. " questID: ".. tostring(questID) .. " isOnMap: ".. tostring(isOnMap) .. " isTask: ".. tostring(isTask) .. " isBounty: ".. tostring(isBounty) .. " isStory: ".. tostring(isStory) .. " isHidden: ".. tostring(isHidden) .. " isScaling: ".. tostring(isScaling) .. " isLegendaryQuest: " .. tostring(isLegendaryQuest) .. " reachable: " .. tostring(reachable) .. " distance: " .. tostring(distance))
+	--@end-debug@
+
+	return questID, questMapId, isOnMap or hasLocalPOI, isCompleted, isDaily, isWeekly, isInstance, isTask, isLegendaryQuest
 end
 
 local function trackQuest(index, questID, markAutoTracked)
@@ -132,15 +156,23 @@ local function debugPrintQuestsHelper(onlyWatched)
 	print("#########################")
 
 	for questIndex = 1, numEntries do
-		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest = getQuestInfo(questIndex)
+		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = getQuestInfo(questIndex)
 		if not (questID == nil) then
 			if (not onlyWatched) or (onlyWatched and autoTracked[questID] == true) then
 				print("#" .. questID .. " - |cffFF6A00" .. select(1, GetQuestLogTitle(questIndex)) .. "|r")
                 print("MapID: " .. tostring(questMapId) .. " IsOnMap: " .. tostring(isOnMap) .. " isInstance: " .. tostring(isInstance))
-				print("AutoTracked: " .. tostring(autoTracked[questID] == true) .. "isLocal: " .. tostring(((questMapId == 0 and isOnMap) or (questMapId == areaid)) and not (isInstance and not inInstance and not isCompleted)))
-				print("Completed: ".. tostring(isCompleted) .. " Daily: " .. tostring(isDaily) .. " Weekly: " .. tostring(isWeekly) .. " WorldQuest: " .. tostring(isWorldQuest))
+				print("AutoTracked: " .. tostring(autoTracked[questID] == true) .. " isLocal: " .. tostring(((questMapId == 0 and isOnMap) or (questMapId == areaid)) and not (isInstance and not inInstance and not isCompleted)))
+				print("Completed: ".. tostring(isCompleted) .. " Daily: " .. tostring(isDaily) .. " Weekly: " .. tostring(isWeekly) .. " WorldQuest: " .. tostring(isWorldQuest) .. " LegendaryQuest: " .. tostring(isLegendaryQuest))
 			end
 		end
+	end
+
+	print("C_QuestLog.GetQuestsOnMap(areaid): ")
+
+	quests = C_QuestLog.GetQuestsOnMap(areaid)
+	for qid = 1, #quests do
+		local quest = quests[qid]
+		print("questID: " .. quest.questID)
 	end
 end
 
@@ -148,8 +180,21 @@ end
 function MyPlugin:Update()
 	autoRemove = E.db.ElvUI_SmartQuestTracker.AutoRemove
 	autoSort =  E.db.ElvUI_SmartQuestTracker.AutoSort
-	removeComplete = E.db.ElvUI_SmartQuestTracker.RemoveComplete
+	removeLegendary = E.db.ElvUI_SmartQuestTracker.RemoveLegendary
+	removeWaypoints = E.db.ElvUI_SmartQuestTracker.RemoveWaypoints
 	showDailies = E.db.ElvUI_SmartQuestTracker.ShowDailies
+	handlingComplete = E.db.ElvUI_SmartQuestTracker.HandlingComplete
+
+	if handlingComplete == "keep" then
+		keepComplete = true
+		removeComplete = false
+	elseif handlingComplete == "keep_local" then
+		keepComplete = false
+		removeComplete = false
+	elseif handlingComplete == "remove" then
+		keepComplete = false
+		removeComplete = true
+	end
 
 	untrackAllQuests()
 	run_update()
@@ -198,11 +243,15 @@ function MyPlugin:PartialUpdate(index)
 		return
 	end
 
-	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest = getQuestInfo(index)
+	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = getQuestInfo(index)
 	if not (questID == nil) then
 		if isCompleted and removeComplete then
 			untrackQuest(index, questID)
-		elseif ((questMapId == 0 and isOnMap) or (questMapId == self.areaID)) and not (isInstance and not self.inInstance and not isCompleted) then
+		elseif isCompleted and keepComplete then
+			trackQuest(index, questID, not isWorldQuest)
+		elseif isLegendaryQuest and removeLegendary and not isOnMap then
+			untrackQuest(index, questID)
+		elseif (isOnMap or (questMapId == self.areaID)) and not (isInstance and not self.inInstance and not isCompleted) then
 			trackQuest(index, questID, not isWorldQuest)
 		elseif showDailies and isDaily and not inInstance then
 			trackQuest(index, questID, not isWorldQuest)
@@ -221,7 +270,7 @@ end
 function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
 	DebugLog("Update for quest:", questIndex)
 
-	local questID, _, _, isCompleted, _, _, _, isWorldQuest = getQuestInfo(questIndex)
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = getQuestInfo(questIndex)
 	if questID ~= nil then
 		updateQuestIndex = nil
 		if removeComplete and isCompleted then
@@ -240,7 +289,7 @@ end
 function MyPlugin:QUEST_ACCEPTED(event, questIndex)
 	DebugLog("Accepted new quest:", questIndex)
 
-	local questID, _, _, isCompleted, _, _, _, isWorldQuest = getQuestInfo(questIndex)
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = getQuestInfo(questIndex)
 	if questID ~= nil then
 		updateQuestIndex = nil
 		if removeComplete and isCompleted then
@@ -281,20 +330,32 @@ function MyPlugin:InsertOptions()
 				name = L['Untrack quests when changing area'],
 				guiInline = true,
 				args = {
-					removecomplete = {
-						order = 1,
+					removelegendary = {
+						order = 3,
 						type = "toggle",
-						name = "Completed quests",
+						name = "Keep story quests",
 						get = function(info)
-							return E.db.ElvUI_SmartQuestTracker.RemoveComplete
+							return not E.db.ElvUI_SmartQuestTracker.RemoveLegendary
 						end,
 						set = function(info, value)
-							E.db.ElvUI_SmartQuestTracker.RemoveComplete = value
+							E.db.ElvUI_SmartQuestTracker.RemoveLegendary = not value
+							MyPlugin:Update() --We changed a setting, call our Update function
+						end,
+					},
+					removewaypoints = {
+						order = 2,
+						type = "toggle",
+						name = "Quest waypoints",
+						get = function(info)
+							return E.db.ElvUI_SmartQuestTracker.RemoveWaypoints
+						end,
+						set = function(info, value)
+							E.db.ElvUI_SmartQuestTracker.RemoveWaypoints = value
 							MyPlugin:Update() --We changed a setting, call our Update function
 						end,
 					},
 					autoremove = {
-						order = 2,
+						order = 1,
 						type = "toggle",
 						name = "Quests from other areas",
 						get = function(info)
@@ -306,15 +367,33 @@ function MyPlugin:InsertOptions()
 						end,
 					},
 					showDailies = {
-						order = 3,
+						order = 5,
 						type = "toggle",
-						name = "Keep daily and weekly quest tracked",
+						name = L["Keep daily and weekly"],
 						get = function(info)
 							return E.db.ElvUI_SmartQuestTracker.ShowDailies
 						end,
 						set = function(info, value)
 							E.db.ElvUI_SmartQuestTracker.ShowDailies = value
 							MyPlugin:Update()
+						end,
+					},
+					removecomplete = {
+						order = 10,
+						type = "select",
+						style = "radio",
+						name =  L['Handling of completed quests'],
+						values = {
+							keep = "Keep all",
+							keep_local = "Keep only local",
+							remove = "Remove all",
+						},
+						get = function(info)
+							return E.db.ElvUI_SmartQuestTracker.HandlingComplete
+						end,
+						set = function(info, value)
+							E.db.ElvUI_SmartQuestTracker.HandlingComplete = value
+							MyPlugin:Update() --We changed a setting, call our Update function
 						end,
 					},
 				},

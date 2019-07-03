@@ -1,3 +1,11 @@
+v3.1.3:
+-   Fixes some issues in the tracking of quest
+-   Adds new option "Untrack Quest Waypoints". With this option all quests which read like "Use portal to get ..." can be removed from the quest tracker.
+-   Adds new option "Keep story quests". With this options you can untrack quests with the alliance or horde icon next to them. They are pretty obnoxious.
+-   Adds new option "Handling of completed quests". With this option, you can either untrack all completed quests, track all completed quests, or keep only the local ones.
+
+Note: The "Untrack Quest Waypoints" doesn't work for all quests. If the only visible objective of an qwuest is the use of the portal, then it will be kept tracked.
+
 v3.1.2:
 -   Update to Rise of Azshara
 
