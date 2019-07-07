@@ -1,3 +1,6 @@
+v3.1.4:
+-   Adds zen mode, which allows to focus on quests
+
 v3.1.3:
 -   Fixes some issues in the tracking of quest
 -   Adds new option "Untrack Quest Waypoints". With this option all quests which read like "Use portal to get ..." can be removed from the quest tracker.

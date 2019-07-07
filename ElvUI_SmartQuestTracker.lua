@@ -35,7 +35,9 @@ P["ElvUI_SmartQuestTracker"] = {
 	["RemoveWaypoints"] = false,
 	["AutoRemove"] = true,
 	["AutoSort"] = true,
-	["ShowDailies"] = false
+	["ShowDailies"] = false,
+	["ZenMode"] = false,
+	["zenModeDistance"] = 100000
 }
 
 local autoTracked = {}
@@ -46,6 +48,9 @@ local keepComplete
 local removeLegendary
 local showDailies
 local removeWaypoints
+local zenMode
+local zenModeRunning
+local zenModeDistance
 
 -- control variables to pass arguments from on event handler to another
 local skippedUpdate = false
@@ -55,9 +60,9 @@ local doUpdate = false
 
 local function getQuestInfo(index)
 	--     title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(questLogIndex)
-	local  title,     _,              _, isHeader,           _, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(index)
-	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(questID)
+	local  title,     _,              _, isHeader,           _, isCompleted, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(index)
 
+	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(questID)
 	local QuestZoneID = C_TaskQuest.GetQuestZoneID(questID)
 	local nextWaypoint = C_QuestLog.GetNextWaypoint(questID)
 
@@ -82,7 +87,7 @@ local function getQuestInfo(index)
     local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
 	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
 
-	local isCompleted = isComplete ~= nil
+	local isCompleted = isCompleted ~= nil
 
 	local tagId = GetQuestTagInfo(questID)
 	local isInstance = false
@@ -91,10 +96,10 @@ local function getQuestInfo(index)
 	end
 
 	--@debug@
-	print("isHeader: ".. tostring(isHeader) .. " isComplete: ".. tostring(isCompleted) .. " nextWaypoint: ".. tostring(nextWaypoint) .. " questMapId: ".. tostring(questMapId) .." QuestZoneID: ".. tostring(QuestZoneID) .. " areaid: ".. tostring(areaid) .. " hasLocalPOI: ".. tostring(hasLocalPOI) .. " questID: ".. tostring(questID) .. " isOnMap: ".. tostring(isOnMap) .. " isTask: ".. tostring(isTask) .. " isBounty: ".. tostring(isBounty) .. " isStory: ".. tostring(isStory) .. " isHidden: ".. tostring(isHidden) .. " isScaling: ".. tostring(isScaling) .. " isLegendaryQuest: " .. tostring(isLegendaryQuest) .. " reachable: " .. tostring(reachable) .. " distance: " .. tostring(distance))
+	print("isHeader: ".. tostring(isHeader) .. " isCompleted: ".. tostring(isCompleted) .. " nextWaypoint: ".. tostring(nextWaypoint) .. " questMapId: ".. tostring(questMapId) .." QuestZoneID: ".. tostring(QuestZoneID) .. " areaid: ".. tostring(areaid) .. " hasLocalPOI: ".. tostring(hasLocalPOI) .. " questID: ".. tostring(questID) .. " isOnMap: ".. tostring(isOnMap) .. " isTask: ".. tostring(isTask) .. " isBounty: ".. tostring(isBounty) .. " isStory: ".. tostring(isStory) .. " isHidden: ".. tostring(isHidden) .. " isScaling: ".. tostring(isScaling) .. " isLegendaryQuest: " .. tostring(isLegendaryQuest) .. " reachable: " .. tostring(reachable) .. " distance: " .. tostring(distance))
 	--@end-debug@
 
-	return questID, questMapId, isOnMap or hasLocalPOI, isCompleted, isDaily, isWeekly, isInstance, isTask, isLegendaryQuest
+	return questID, questMapId, isOnMap or hasLocalPOI, isCompleted, isDaily, isWeekly, isInstance, isTask, isLegendaryQuest, distance
 end
 
 local function trackQuest(index, questID, markAutoTracked)
@@ -169,11 +174,29 @@ local function debugPrintQuestsHelper(onlyWatched)
 
 	print("C_QuestLog.GetQuestsOnMap(areaid): ")
 
-	quests = C_QuestLog.GetQuestsOnMap(areaid)
+	local quests = C_QuestLog.GetQuestsOnMap(areaid)
 	for qid = 1, #quests do
 		local quest = quests[qid]
 		print("questID: " .. quest.questID)
 	end
+end
+
+function hasFocusQuest(mapID)
+	if not zenMode then
+		return false
+	end
+	local quests = C_QuestLog.GetQuestsOnMap(mapID)
+	for qid = 1, #quests do
+		local quest = quests[qid]
+		local index = GetQuestLogIndexByID(quest.questID);
+		local distanceSq, _ = GetDistanceSqToQuest(index)
+
+		if distanceSq <= zenModeDistance then
+			return true
+		end
+	end
+
+	return false
 end
 
 --Function we can call when a setting changes.
@@ -184,6 +207,8 @@ function MyPlugin:Update()
 	removeWaypoints = E.db.ElvUI_SmartQuestTracker.RemoveWaypoints
 	showDailies = E.db.ElvUI_SmartQuestTracker.ShowDailies
 	handlingComplete = E.db.ElvUI_SmartQuestTracker.HandlingComplete
+	zenMode = E.db.ElvUI_SmartQuestTracker.ZenMode
+	zenModeDistance = E.db.ElvUI_SmartQuestTracker.zenModeDistance
 
 	if handlingComplete == "keep" then
 		keepComplete = true
@@ -198,6 +223,9 @@ function MyPlugin:Update()
 
 	untrackAllQuests()
 	run_update()
+	if not zenModeRunning then
+		self:ScheduleTimer("ZenMode", 1)
+	end
 end
 
 function MyPlugin:RunUpdate()
@@ -205,8 +233,9 @@ function MyPlugin:RunUpdate()
 		self.update_running = true
 
 		-- Update play information cache, so we don't run it for every quest
-		self.areaID = C_Map.GetBestMapForUnit("player");
+		self.areaID = C_Map.GetBestMapForUnit("player")
 		self.inInstance = select(1, IsInInstance())
+		self.hasFocus = hasFocusQuest(self.areaID)
 
 		--@debug@
 		DebugLog("MyPlugin:RunUpdate")
@@ -214,6 +243,19 @@ function MyPlugin:RunUpdate()
 		self:ScheduleTimer("PartialUpdate", 0.01, 1)
 	else
 		self.update_required = true
+	end
+end
+
+function MyPlugin:ZenMode()
+	--@debug@
+	DebugLog("Running zen mode update")
+	--@end-debug@
+	if zenMode then
+		zenModeRunning = true
+		run_update()
+		self:ScheduleTimer("ZenMode", 1)
+	else
+		zenModeRunning = false
 	end
 end
 
@@ -227,8 +269,10 @@ function MyPlugin:PartialUpdate(index)
 
 		if self.update_required == true then
 			self.update_required = nil
+			self.areaID = C_Map.GetBestMapForUnit("player")
 			self.inInstance = select(1, IsInInstance())
-			self.areaID = areaID
+			self.hasFocus = hasFocusQuest(self.areaID)
+
 			--@debug@
 			DebugLog("Reschedule partial update")
 			--@end-debug@
@@ -243,12 +287,14 @@ function MyPlugin:PartialUpdate(index)
 		return
 	end
 
-	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = getQuestInfo(index)
+	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest, distance = getQuestInfo(index)
 	if not (questID == nil) then
 		if isCompleted and removeComplete then
 			untrackQuest(index, questID)
 		elseif isCompleted and keepComplete then
 			trackQuest(index, questID, not isWorldQuest)
+		elseif self.hasFocus and distance > zenModeDistance then
+			untrackQuest(index, questID)
 		elseif isLegendaryQuest and removeLegendary and not isOnMap then
 			untrackQuest(index, questID)
 		elseif (isOnMap or (questMapId == self.areaID)) and not (isInstance and not self.inInstance and not isCompleted) then
@@ -324,6 +370,49 @@ function MyPlugin:InsertOptions()
 		type = "group",
 		name = "|cffFF6A00Smart Quest Tracker|r",
 		args = {
+			zenMode = {
+				order = 1,
+				type = "group",
+				name = L['Zen mode (experimental)'],
+				guiInline = true,
+				args = {
+					zenModeDesc = {
+						order = 1,
+						type = "description",
+						name = "Zen mode will only track those Quest, which are within the given distance, if at least one quest is within the given distance. (This will be MUCH more demanding on the CPU, as a constant scanning is required.)"
+					},
+					zenModeEnabled = {
+						order = 10,
+						type = "toggle",
+						name = "Enabled",
+						get = function(info)
+							return E.db.ElvUI_SmartQuestTracker.ZenMode
+						end,
+						set = function(info, value)
+							E.db.ElvUI_SmartQuestTracker.ZenMode = value
+							MyPlugin:Update() --We changed a setting, call our Update function
+						end,
+					},
+					zenModeDistance = {
+						order = 11,
+						type = "range",
+						name = "Distance to quest",
+						min = 1,
+						max = 10000000,
+						softMin = 10000,
+						softMax = 1000000,
+						step = 1,
+						bigStep = 10000,
+						get = function(info)
+							return E.db.ElvUI_SmartQuestTracker.zenModeDistance
+						end,
+						set = function(info, value)
+							E.db.ElvUI_SmartQuestTracker.zenModeDistance = value
+							MyPlugin:Update() --We changed a setting, call our Update function
+						end,
+					}
+				}
+			},
 			clear = {
 				order = 1,
 				type = "group",
