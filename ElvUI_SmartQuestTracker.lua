@@ -182,7 +182,7 @@ local function debugPrintQuestsHelper(onlyWatched)
 end
 
 function hasFocusQuest(mapID)
-	if not zenMode then
+	if not zenMode or mapID == nil then
 		return false
 	end
 	local quests = C_QuestLog.GetQuestsOnMap(mapID)
