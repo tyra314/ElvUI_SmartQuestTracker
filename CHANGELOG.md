@@ -1,3 +1,6 @@
+v3.1.5:
+-   Fixes quest log not usable when zen mode is active
+
 v3.1.4:
 -   Adds zen mode, which allows to focus on quests
 

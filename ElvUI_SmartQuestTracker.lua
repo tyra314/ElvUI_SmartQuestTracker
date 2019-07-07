@@ -247,12 +247,15 @@ function MyPlugin:RunUpdate()
 end
 
 function MyPlugin:ZenMode()
-	--@debug@
-	DebugLog("Running zen mode update")
-	--@end-debug@
 	if zenMode then
 		zenModeRunning = true
-		run_update()
+		if not WorldMapFrame:IsVisible() then
+			--@debug@
+			DebugLog("Running zen mode update")
+			--@end-debug@
+
+			run_update()
+		end
 		self:ScheduleTimer("ZenMode", 1)
 	else
 		zenModeRunning = false
