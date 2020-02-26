@@ -1,3 +1,6 @@
+v3.1.6:
+-   Fixes lua error when mapID is nil during map transitions
+
 v3.1.5:
 -   Fixes quest log not usable when zen mode is active
 
