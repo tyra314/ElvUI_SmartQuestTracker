@@ -58,10 +58,15 @@ local updateQuestIndex = nil
 local newQuestIndex = nil
 local doUpdate = false
 
-local function getQuestInfo(index)
+local function SQTGetQuestInfo(index)
+	
 	--     title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(questLogIndex)
 	local  info = C_QuestLog.GetInfo(index)
-
+	if info == nil then
+		print("SmartQuestTracker> Recieved unexpected nill value:")
+		print(index)
+		return nil
+	end
 	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(info.questID)
 	local QuestZoneID = C_TaskQuest.GetQuestZoneID(info.questID)
 	local nextWaypoint = C_QuestLog.GetNextWaypoint(info.questID)
@@ -157,7 +162,7 @@ local function debugPrintQuestsHelper(onlyWatched)
 	print("#########################")
 
 	for questIndex = 1, numEntries do
-		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = getQuestInfo(questIndex)
+		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = SQTGetQuestInfo(questIndex)
 		if not (questID == nil) then
 			if (not onlyWatched) or (onlyWatched and autoTracked[questID] == true) then
 				print("#" .. questID .. " - |cffFF6A00" .. select(1, C_QuestLog.GetInfo(questIndex)) .. "|r")
@@ -286,7 +291,7 @@ function MyPlugin:PartialUpdate(index)
 		return
 	end
 
-	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest, distance = getQuestInfo(index)
+	local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest, distance = SQTGetQuestInfo(index)
 	if not (questID == nil) then
 		if isCompleted and removeComplete then
 			untrackQuest(index, questID)
@@ -312,10 +317,10 @@ end
 
 -- event handlers
 
-function MyPlugin:QUEST_WATCH_UPDATE(event, questIndex)
+function MyPlugin:QUEST_WATCH_UPDATE(event, questId)
 	DebugLog("Update for quest:", questIndex)
-
-	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = getQuestInfo(questIndex)
+	local questIndex = C_QuestLog.GetLogIndexForQuestID(questId)
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = SQTGetQuestInfo(questIndex)
 	if questID ~= nil then
 		updateQuestIndex = nil
 		if removeComplete and isCompleted then
@@ -331,10 +336,11 @@ function MyPlugin:QUEST_LOG_UPDATE(event)
 	-- run_update()
 end
 
-function MyPlugin:QUEST_ACCEPTED(event, questIndex)
+function MyPlugin:QUEST_ACCEPTED(event, questId)
+	local questIndex = C_QuestLog.GetLogIndexForQuestID(questId)
 	DebugLog("Accepted new quest:", questIndex)
 
-	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = getQuestInfo(questIndex)
+	local questID, _, _, isCompleted, _, _, _, isWorldQuest, _ = SQTGetQuestInfo(questIndex)
 	if questID ~= nil then
 		updateQuestIndex = nil
 		if removeComplete and isCompleted then
@@ -345,7 +351,8 @@ function MyPlugin:QUEST_ACCEPTED(event, questIndex)
 	end
 end
 
-function MyPlugin:QUEST_REMOVED(event, questIndex)
+function MyPlugin:QUEST_REMOVED(event, questId)
+	local questIndex = C_QuestLog.GetLogIndexForQuestID(questId)
 	DebugLog("REMOVED:", questIndex)
 	autoTracked[questIndex] = nil
 	-- run_update()
