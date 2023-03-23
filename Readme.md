@@ -1,3 +1,7 @@
+# I won't update or the ElvUI version anymore. Go to the [standalone version instead](https://github.com/tyra314/SmartQuestTracker)!
+
+
+
 About
 =====
 
