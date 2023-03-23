@@ -14,13 +14,13 @@
 ]]
 
 local function DebugLog(...)
---@debug@
+--[===[@debug@
 printResult = "|cffFF6A00Smart Quest Tracker|r: "
 for i,v in ipairs({...}) do
 	printResult = printResult .. tostring(v) .. " "
 end
 DEFAULT_CHAT_FRAME:AddMessage(printResult)
---@end-debug@
+--@end-debug@]===]
 end
 
 local E, L, V, P, G = unpack(ElvUI); --Import: Engine, Locales, PrivateDB, ProfileDB, GlobalDB
@@ -60,77 +60,73 @@ local doUpdate = false
 
 local function getQuestInfo(index)
 	--     title, level, suggestedGroup, isHeader, isCollapsed, isComplete, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(questLogIndex)
-	local  title,     _,              _, isHeader,           _, isCompleted, frequency, questID, startEvent, displayQuestID, isOnMap, hasLocalPOI, isTask, isBounty, isStory, isHidden, isScaling = GetQuestLogTitle(index)
+	local  info = C_QuestLog.GetInfo(index)
 
-	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(questID)
-	local QuestZoneID = C_TaskQuest.GetQuestZoneID(questID)
-	local nextWaypoint = C_QuestLog.GetNextWaypoint(questID)
+	local isLegendaryQuest = C_QuestLog.IsLegendaryQuest(info.questID)
+	local QuestZoneID = C_TaskQuest.GetQuestZoneID(info.questID)
+	local nextWaypoint = C_QuestLog.GetNextWaypoint(info.questID)
 
-	--@debug@
+	--[===[@debug@
 	print("%%%%%%%%%" .. tostring(title) .. "%%%%%%%")
-	--@end-debug@
+	--@end-debug@]===]
 
-	if isHeader then
+	if info.isHeader then
 		return nil
 	end
 
-	local questMapId = C_TaskQuest.GetQuestZoneID(questID)
-	if questMapId == nil then
-		questMapId = GetQuestUiMapID(questID)
-	end
+	local questMapId = C_TaskQuest.GetQuestZoneID(info.questID)
 	if nextWaypoint ~= nil and nextWaypoint ~= questMapId and removeWaypoints then
 		questMapId = 0
 	end
-	local distance, reachable = GetDistanceSqToQuest(index)
+	local distance, reachable = C_QuestLog.GetDistanceSqToQuest(index)
 	local areaid = C_Map.GetBestMapForUnit("player")
 
-    local isDaily = frequency == LE_QUEST_FREQUENCY_DAILY
-	local isWeekly =  frequency == LE_QUEST_FREQUENCY_WEEKLY
+    local isDaily = info.frequency == LE_QUEST_FREQUENCY_DAILY
+	local isWeekly =  info.frequency == LE_QUEST_FREQUENCY_WEEKLY
 
-	local isCompleted = isCompleted ~= nil
+	local isCompleted = info.isCompleted ~= nil
 
-	local tagId = GetQuestTagInfo(questID)
+	local tagId = C_QuestLog.GetQuestTagInfo(info.questID)
 	local isInstance = false
 	if tagId then
 	    isInstance = tagId == QUEST_TAG_DUNGEON or tagId == QUEST_TAG_HEROIC or tagId == QUEST_TAG_RAID or tagId == QUEST_TAG_RAID10 or tagId == QUEST_TAG_RAID25
 	end
 
-	--@debug@
+	--[===[@debug@
 	print("isHeader: ".. tostring(isHeader) .. " isCompleted: ".. tostring(isCompleted) .. " nextWaypoint: ".. tostring(nextWaypoint) .. " questMapId: ".. tostring(questMapId) .." QuestZoneID: ".. tostring(QuestZoneID) .. " areaid: ".. tostring(areaid) .. " hasLocalPOI: ".. tostring(hasLocalPOI) .. " questID: ".. tostring(questID) .. " isOnMap: ".. tostring(isOnMap) .. " isTask: ".. tostring(isTask) .. " isBounty: ".. tostring(isBounty) .. " isStory: ".. tostring(isStory) .. " isHidden: ".. tostring(isHidden) .. " isScaling: ".. tostring(isScaling) .. " isLegendaryQuest: " .. tostring(isLegendaryQuest) .. " reachable: " .. tostring(reachable) .. " distance: " .. tostring(distance))
-	--@end-debug@
-
-	return questID, questMapId, isOnMap or hasLocalPOI, isCompleted, isDaily, isWeekly, isInstance, isTask, isLegendaryQuest, distance
+	--@end-debug@]===]
+	return info.questID, questMapId, info.isOnMap or info.hasLocalPOI, isCompleted, isDaily, isWeekly, isInstance, info.isTask, isLegendaryQuest, distance
 end
 
 local function trackQuest(index, questID, markAutoTracked)
 	if autoTracked[questID] ~= true and markAutoTracked then
 		autoTracked[questID] = true
-		AddQuestWatch(index)
+		C_QuestLog.AddQuestWatch(questID)
 	end
 
     if autoSort then
-		SortQuestWatches()
+		C_QuestLog.SortQuestWatches()
 	end
 end
 
 local function untrackQuest(index, questID)
 	if autoTracked[questID] == true then
-		RemoveQuestWatch(index)
+		C_QuestLog.RemoveQuestWatch(questID)
 		autoTracked[questID] = nil
 	end
 
     if autoSort then
-		SortQuestWatches()
+		C_QuestLog.SortQuestWatches()
 	end
 end
 
 local function untrackAllQuests()
-	local numEntries, _ = GetNumQuestLogEntries()
+	local numEntries, _ = C_QuestLog.GetNumQuestLogEntries()
 
 	for index = 1, numEntries do
-		local _, _, _, isHeader, _, _, _, _, _, _, _, _, _, _ = GetQuestLogTitle(index)
-		if ( not isHeader) then
-			RemoveQuestWatch(index)
+		local info = C_QuestLog.GetInfo(index)
+		if ( not info.isHeader) then
+			C_QuestLog.RemoveQuestWatch(info.questID)
 		end
 	end
 
@@ -138,9 +134,9 @@ local function untrackAllQuests()
 end
 
 local function run_update()
-	--@debug@
+	--[===[@debug@
 	DebugLog("Running full update")
-	--@end-debug@
+	--@end-debug@]===]
 	MyPlugin:RunUpdate()
 end
 
@@ -154,9 +150,9 @@ local function debugPrintQuestsHelper(onlyWatched)
 	print("In instance: " .. tostring(inInstance))
 	print("Instance type: " .. instanceType)
 
-	local numEntries, numQuests = GetNumQuestLogEntries()
+	local numEntries, numQuests = C_QuestLog.GetNumQuestLogEntries()
 	print(numQuests .. " Quests in " .. numEntries .. " Entries.")
-	local numWatches = GetNumQuestWatches()
+	local numWatches = C_QuestLog.GetNumQuestWatches()
 	print(numWatches .. " Quests tracked.")
 	print("#########################")
 
@@ -164,7 +160,7 @@ local function debugPrintQuestsHelper(onlyWatched)
 		local questID, questMapId, isOnMap, isCompleted, isDaily, isWeekly, isInstance, isWorldQuest, isLegendaryQuest = getQuestInfo(questIndex)
 		if not (questID == nil) then
 			if (not onlyWatched) or (onlyWatched and autoTracked[questID] == true) then
-				print("#" .. questID .. " - |cffFF6A00" .. select(1, GetQuestLogTitle(questIndex)) .. "|r")
+				print("#" .. questID .. " - |cffFF6A00" .. select(1, C_QuestLog.GetInfo(questIndex)) .. "|r")
                 print("MapID: " .. tostring(questMapId) .. " IsOnMap: " .. tostring(isOnMap) .. " isInstance: " .. tostring(isInstance))
 				print("AutoTracked: " .. tostring(autoTracked[questID] == true) .. " isLocal: " .. tostring(((questMapId == 0 and isOnMap) or (questMapId == areaid)) and not (isInstance and not inInstance and not isCompleted)))
 				print("Completed: ".. tostring(isCompleted) .. " Daily: " .. tostring(isDaily) .. " Weekly: " .. tostring(isWeekly) .. " WorldQuest: " .. tostring(isWorldQuest) .. " LegendaryQuest: " .. tostring(isLegendaryQuest))
@@ -188,8 +184,8 @@ function hasFocusQuest(mapID)
 	local quests = C_QuestLog.GetQuestsOnMap(mapID)
 	for qid = 1, #quests do
 		local quest = quests[qid]
-		local index = GetQuestLogIndexByID(quest.questID);
-		local distanceSq, _ = GetDistanceSqToQuest(index)
+		local index = C_QuestLog.GetQuestLogIndexByID(quest.questID);
+		local distanceSq, _ = C_QuestLog.GetDistanceSqToQuest(index)
 
 		if distanceSq <= zenModeDistance then
 			return true
@@ -237,9 +233,9 @@ function MyPlugin:RunUpdate()
 		self.inInstance = select(1, IsInInstance())
 		self.hasFocus = hasFocusQuest(self.areaID)
 
-		--@debug@
+		--[===[@debug@
 		DebugLog("MyPlugin:RunUpdate")
-		--@end-debug@
+		--@end-debug@]===]
 		self:ScheduleTimer("PartialUpdate", 0.01, 1)
 	else
 		self.update_required = true
@@ -250,9 +246,9 @@ function MyPlugin:ZenMode()
 	if zenMode then
 		zenModeRunning = true
 		if not WorldMapFrame:IsVisible() then
-			--@debug@
+			--[===[@debug@
 			DebugLog("Running zen mode update")
-			--@end-debug@
+			--@end-debug@]===]
 
 			run_update()
 		end
@@ -263,12 +259,12 @@ function MyPlugin:ZenMode()
 end
 
 function MyPlugin:PartialUpdate(index)
-	local numEntries, _ = GetNumQuestLogEntries()
+	local numEntries, _ = C_QuestLog.GetNumQuestLogEntries()
 
 	if index >= numEntries then
-		--@debug@
+		--[===[@debug@
 		DebugLog("Finished partial updates")
-		--@end-debug@
+		--@end-debug@]===]
 
 		if self.update_required == true then
 			self.update_required = nil
@@ -276,13 +272,13 @@ function MyPlugin:PartialUpdate(index)
 			self.inInstance = select(1, IsInInstance())
 			self.hasFocus = hasFocusQuest(self.areaID)
 
-			--@debug@
+			--[===[@debug@
 			DebugLog("Reschedule partial update")
-			--@end-debug@
+			--@end-debug@]===]
 			self:ScheduleTimer("PartialUpdate", 0.01, 1)
 		else
 			if autoSort then
-				SortQuestWatches()
+				C_QuestLog.SortQuestWatches()
 			end
 			self.update_running = nil
 		end

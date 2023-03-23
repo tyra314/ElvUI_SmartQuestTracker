@@ -1,3 +1,4 @@
+v4.1.0: Updated for Dragonflight.
 v3.1.6:
 -   Fixes lua error when mapID is nil during map transitions
 
