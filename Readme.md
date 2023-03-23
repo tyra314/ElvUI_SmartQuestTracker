@@ -1,3 +1,7 @@
+Fork
+=====
+The original version is no longer maintained, but the original addon was made by [tyra314](https://github.com/tyra314/ElvUI_SmartQuestTracker). I only updated it to work for Dragonflight, which may or may not work. I'm using it for now, so I'll slowly fix any issues I encounter, but my tolerance for Lua errors here and there is pretty high and I'm generally lazy, so...
+
 About
 =====
 
